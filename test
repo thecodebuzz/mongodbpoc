@@ -1,0 +1,60 @@
+import asyncio
+import aiohttp
+from azure.storage.blob.aio import BlobServiceClient
+from azure.core.exceptions import ResourceNotFoundError
+
+# Define your Azure Blob Storage connection string and container name
+connection_string = "your_connection_string"
+container_name = "your_container_name"
+blob_name = "your_blob_name"
+
+# Define chunk size (in bytes)
+chunk_size = 1024 * 1024  # 1 MB chunk size
+
+# Define the number of threads for parallel processing
+num_threads = 5
+
+async def download_blob_chunk(blob_client, offset, length, chunk_num):
+    print(f"Downloading chunk {chunk_num}...")
+    async with blob_client, blob_client.download_blob(offset=offset, length=length) as stream:
+        chunk_data = await stream.readall()
+        print(f"Processing chunk {chunk_num}...")
+        # Process the chunk data here (e.g., write to file, analyze, etc.)
+        print(f"Finished processing chunk {chunk_num}")
+
+async def main():
+    try:
+        # Create a blob service client
+        blob_service_client = BlobServiceClient.from_connection_string(connection_string)
+
+        # Get a blob client for the blob
+        blob_client = blob_service_client.get_blob_client(container=container_name, blob=blob_name)
+
+        # Get the total size of the blob
+        blob_properties = await blob_client.get_blob_properties()
+        blob_size = blob_properties.size
+
+        # Create a list to store tasks
+        tasks = []
+
+        # Calculate the chunk size for each thread
+        chunk_size_per_thread = blob_size // num_threads
+        remaining_bytes = blob_size % num_threads
+
+        # Create tasks to download and process each chunk
+        for i in range(num_threads):
+            offset = i * chunk_size_per_thread
+            length = chunk_size_per_thread + (chunk_size if i == num_threads - 1 else 0) + (remaining_bytes if i == num_threads - 1 else 0)
+            tasks.append(download_blob_chunk(blob_client, offset, length, i))
+
+        # Run tasks concurrently
+        await asyncio.gather(*tasks)
+
+    except ResourceNotFoundError as ex:
+        print("The specified blob does not exist:", ex)
+
+    except Exception as ex:
+        print("An error occurred:", ex)
+
+if __name__ == "__main__":
+    asyncio.run(main())
